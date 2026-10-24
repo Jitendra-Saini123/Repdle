@@ -25,6 +25,7 @@ Beat me → https://repdle.<you>.workers.dev/d/142-k3x9a2b7qz4m
 7. [30-day metrics plan](#7-30-day-metrics-plan)
 8. [Privacy policy](#8-privacy-policy)
 9. [Safety, fair play, known limits](#9-safety-fair-play-known-limits)
+10. [Per-exercise test report](#10-per-exercise-test-report-24-oct-2026)
 
 ---
 
@@ -52,9 +53,12 @@ npm run metrics:local         # prints the 30-day metrics report
 **Tests:**
 
 ```bash
-npm test                      # 28 unit tests: rep counting (synthetic skeletons), grid, share text, percentile, ids
-npm run test:api              # 15 API tests on a throw-away local Worker + D1 (port 8788) — your dev data is untouched
+npm test                      # 54 unit tests: rep counting (synthetic skeletons; every exercise × variant × phone situation), motion-sensor mapping, grid, share text, percentile, ids
+npm run test:api              # 16 API tests on a throw-away local Worker + D1 (port 8788) — your dev data is untouched
 REPDLE_Y4M=/path/squats.y4m npm run test:e2e              # real Chrome, a video file as the webcam (needs npm run dev)
+REPDLE_Y4M=/path/plank.y4m REPDLE_EX=plank REPDLE_EXPECT=45-60 node test/e2e/exercise.e2e.mjs   # one practice session of any exercise
+node test/e2e/matrix.mjs cases.json results.json   # many sessions: clip × transforms (rot90, flip, far, dark, fps8, fast2) × exercise
+node test/e2e/tap.e2e.mjs                          # tap-mode fallback for a reps exercise and a hold
 ```
 
 - `.dev.vars` (created by `npm run setup`) holds `DEV=1`. It lets tests fake the clock and the country, and enables `POST /api/dev/cron`. **Never** set `DEV` in production. `wrangler deploy` does not upload `.dev.vars`.
@@ -150,8 +154,10 @@ No framework and no build step: the browser loads ES modules directly, and the W
 | Push-ups (knee) | elbow angle | 150 / 135 / 100° | torso within 40° of horizontal (standing arm curls never count); shoulder–hip–ankle (knee) line ≥ 145° at the bottom |
 | Jumping jacks (step) | arm raise (2D, front view) | arms ≤ 50° … ≥ 140° | feet apart ≥ 0.45 (0.35) × leg length while arms are up |
 | Lunges (split squats) | mean of both knees | 155 / 140 / 115° (125°) | feet ≥ 0.5 × leg length apart (a squat in place doesn't count) |
-| Plank (knee plank) | held seconds | — | body line ≥ 155° (150°) and within 35° of horizontal; coaching tells you whether to lift or lower the hips |
+| Plank (knee plank) | held seconds | — | body line ≥ 155° (150°), within 35° of level (real gravity, see below), and upper arm 45–135° to the torso (elbows or hands under the shoulders, so standing or lying flat never counts); coaching tells you whether to lift or lower the hips |
 | Wall sit (high) | held seconds | knee 65–115° (100–150°) | torso upright, thighs within 35° (60°) of horizontal |
+
+**Which way is up.** A phone lying on its side with rotation lock on delivers a picture turned by 90°. "Level" and "upright" (plank, push-ups, wall sit) therefore come from the phone's motion sensor (`public/js/gravity.js`), not from the picture's edges. iPhones ask for "motion & orientation" when Start is tapped for those exercises. Without a sensor (laptops, or permission denied) the picture's own up is used, and the plank arm check still rejects a standing player.
 
 **Holds:**
 - A second counts if at least 500 ms of it was held.
@@ -224,7 +230,7 @@ Deployed on 23 Oct 2026 with exactly these steps → https://repdle.repdle.worke
    cd repdle
    npx wrangler login
    ```
-3. **Create the database** and paste the printed `database_id` into `wrangler.jsonc` (replacing the zeros):
+3. **Create the database** and paste the printed `database_id` into `wrangler.jsonc` (replacing the zeros). Local dev keys its database by this id, so run `npm run db:local` again afterwards:
    ```bash
    npx wrangler d1 create repdle
    npx wrangler d1 migrations apply repdle --remote
@@ -451,6 +457,10 @@ For leagues we store the league code, your anonymous id and your nickname.
 - **Real-phone testing is still to do.**
   - Verified so far: desktop Chrome with a real webcam (GPU, ~60 fps), headless Chrome with a recorded human video (CPU/WASM), and synthetic skeletons.
   - Before launch, check Android Chrome (GPU delegate), iPhone Safari (the GPU delegate may fall back to CPU) and a cheap Android phone. The < 6 fps prompt offers tap mode.
+- **Sideways phones** (fixed 24 Oct 2026): with rotation lock on, standing in front of the phone used to count plank seconds and a real plank counted nothing.
+  - The live code counted 48 s for two people standing in a rotated clip; the fixed code counts 0.
+  - With the motion sensor, a real plank in the rotated clip counts 54/60 s, the same as with an upright phone.
+  - Without motion permission, a sideways phone can't see a real plank. Keep the phone upright or allow motion access.
 - **Laptops:** a webcam on a desk usually shows only head to hips. Players must put the laptop low (a chair or the floor) or step back about 2.5–3 m; the position screen says so.
 - Counting is tuned for one person in frame. Side view is best for squats, push-ups, lunges, plank and wall sit; front view for jumping jacks. Baggy clothes or a dark room lower accuracy.
 - The UI is English only. Add Hindi, Portuguese, Spanish and Indonesian next; the country board will show where players come from.
@@ -459,3 +469,40 @@ For leagues we store the league code, your anonymous id and your nickname.
 **Licenses:**
 - MediaPipe (`@mediapipe/tasks-vision`, pose model): Apache 2.0, © Google.
 - The e2e test clips came from Wikimedia Commons (CC BY / CC BY-SA). They are not included; bring your own.
+
+---
+
+## 10. Per-exercise test report (24 Oct 2026)
+
+**What was run:**
+- **Real people:** headless Chrome with real-people clips as the webcam. The clips are public-domain or CC from Wikimedia Commons and live only in the local test setup, not in the repo. Each clip was also turned into variants:
+  - rotated 90° or 180° (a phone on its side or upside down), with and without a fake motion sensor;
+  - mirrored (facing the other side);
+  - half size (far away / a short player);
+  - dark with sensor noise;
+  - 8 fps (a budget phone);
+  - 2× speed.
+- **Synthetic skeletons:** every exercise × variant × 10 phone/camera situations, plus jitter and 8/12 fps.
+- **Server:** per-exercise limits.
+- **Tap mode:** for reps and holds.
+
+| Exercise | Real-clip results | Bugs found → fixed |
+|---|---|---|
+| Squats / chair squats | 8 of 8 real reps in every variant (rotated with or without sensor, upside down, mirrored, far, dark, 8 fps); 2× speed 16; chair squats 8 | none |
+| Push-ups / knee push-ups | 8 of 8 (upright, sideways + sensor, mirrored, far, dark, 8 fps); knee 8; sideways without sensor 0 (no false count) | standing arm curls on a sideways phone without sensor counted as push-ups (40 in the synthetic test) → arms must be under the shoulders at the top |
+| Plank / knee plank | 52–57 s of a 54-s hold in every variant; standing 0 | standing counted and a real plank didn't on a sideways phone (reported by a player) → motion sensor for "level" and an arms-under-shoulders check |
+| Jumping jacks / step jacks | 9–11 of ~10.7 real jacks in the minute; every counted jack falls inside a real jack burst; burpee jumps rejected as partial | getting up from a toe touch or burpee counted as a jack → hands must be further from the feet than the shoulders |
+| Lunges / split squats | every deep lunge on the instructional clip counted (7 in the window); standing 0 | legs-only and head-out-of-frame close-ups produced phantom reps (MediaPipe returned a scrambled skeleton with high visibility) → the head and shoulders must be in the picture for squats, lunges and jacks |
+| Wall sit / high wall sit | synthetic only (no free clip found): 60/60 in every orientation and size; standing 0 | the 3-s auto-countdown was too short to walk to the wall → 5 s for every hold |
+
+**Other fixes from this round:**
+- A saved score now always returns success even if the stats, league or duel extras fail, so the app never retries a saved score.
+- The reps depth meter is hidden for holds.
+
+**Still needs a real phone (can't be simulated here):**
+- iPhone Safari: the motion-permission prompt on Start for plank, push-ups and wall sit, and whether its GPU delegate runs or falls back to CPU.
+- A budget Android phone's real fps.
+- A real wall sit and real lunges with a live camera.
+- Very far players: about 6 m or more, where the person is under ~70 px tall in the picture. Jacks start to miss reps there.
+
+**Known limit:** on a sideways phone without motion permission, push-ups and plank can't be seen at all. They count 0, never too many, and the position screen asks the player to allow motion or keep the phone upright.

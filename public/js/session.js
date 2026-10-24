@@ -4,6 +4,7 @@ import { EXERCISES, DURATION_MS, exerciseName } from './rules.js';
 import { createAnalyzer, createTapCounter } from './reps.js';
 import { loadPose, openCamera, stopCamera, drawSkeleton } from './pose.js';
 import { segmentsFromTimes, segmentsFromHeld } from './grid.js';
+import { startGravity, pictureUp, hasMotionReadings } from './gravity.js';
 import { esc, beep, buzz, speak, unlockAudio, toast, confirmSheet, copyText, $ } from './ui.js';
 import { store } from './store.js';
 
@@ -22,9 +23,12 @@ export function runSession(o) {
   return new Promise((resolve) => {
     const ex = EXERCISES[o.ex];
     const isHold = ex.kind === 'hold';
+    // Floor exercises and holds (walk to the wall, get down into a plank) need
+    // more time between "ready" and GO than standing reps.
+    const slowStart = ex.floor || isHold;
     const name = exerciseName(o.ex, o.v);
     const root = document.createElement('div');
-    root.className = 'session';
+    root.className = isHold ? 'session hold' : 'session';
     root.innerHTML = `
       <div class="stage"><video playsinline muted></video><canvas class="skel"></canvas></div>
       <header class="s-top">
@@ -155,7 +159,7 @@ export function runSession(o) {
       const r = (mode === 'tap' ? tap : analyzer).result(DURATION_MS);
       const seg = isHold ? segmentsFromHeld(r.held) : segmentsFromTimes(r.times);
       const fps = mode === 'cam' ? Math.round((activeFrames / (DURATION_MS / 1000)) * 10) / 10 : 0;
-      log('result', { score: r.score, partial: r.partial || 0, fps, times: r.times });
+      log('result', { score: r.score, partial: r.partial || 0, fps, times: r.times, held: r.held });
       beep(1200, 300);
       buzz(200);
       speak(isHold ? `${r.score} seconds` : `${r.score} reps`);
@@ -190,6 +194,7 @@ export function runSession(o) {
           : none ? 'No usable camera found on this device.' : `Camera error: ${e?.message || e}`);
       }
       root.classList.toggle('mirror', facing === 'user');
+      if (ex.gravity) startGravity();
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       if (!landmarker) {
@@ -217,9 +222,10 @@ export function runSession(o) {
         <p class="big-line">Get in position</p>
         <p class="hint">${esc(ex.setup)}</p>
         <p class="hint">💻 Laptop or phone on a table? Put it lower (a chair or the floor) or step back until your feet show.</p>
+        ${ex.gravity && matchMedia('(pointer: coarse)').matches && !hasMotionReadings() ? '<p class="hint">📱 Phone on its side? Allow “motion & orientation” if asked, or keep the phone upright.</p>' : ''}
         <p class="check ${msg ? 'no' : 'yes'}">${msg ? '✗ ' + esc(msg) : '✓ Body in frame — starting…'}</p>
         <div class="row">
-          <button class="btn primary" data-act="start">Start now (${ex.floor ? 8 : 5}s to get ready)</button>
+          <button class="btn primary" data-act="start">Start now (${slowStart ? 8 : 5}s to get ready)</button>
         </div>
         <div class="row">
           <button class="btn ghost small" data-act="flip">↺ Switch camera</button>
@@ -230,7 +236,7 @@ export function runSession(o) {
     panel.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (!act) return;
-      if (act === 'start') beginCountdown(ex.floor ? 8000 : 5000);
+      if (act === 'start') beginCountdown(slowStart ? 8000 : 5000);
       if (act === 'flip') flip();
       if (act === 'tap') switchToTap(fb || FB.manual);
       if (act === 'retry') { showPanel(''); startCamera(); }
@@ -263,6 +269,7 @@ export function runSession(o) {
     }
 
     let lastPosMsg;
+    let loggedUp = false;
     function stopLoop() {
       cancelAnimationFrame(raf);
       clearTimeout(loopTimer);
@@ -295,7 +302,12 @@ export function runSession(o) {
       const lm = res.landmarks?.[0];
       const wl = res.worldLandmarks?.[0];
       drawSkeleton(ctx2d, lm, canvas.width, canvas.height, phase === 'active' ? '#34d399' : '#facc15');
-      const f = lm ? { t: t(), lm, wl, aspect: video.videoWidth / video.videoHeight } : null;
+      const up = ex.gravity ? pictureUp({ mirrored: facing === 'user' }) : null;
+      if (up && !loggedUp) {
+        loggedUp = true;
+        log('gravity', { up: up.map((x) => Math.round(x * 100) / 100) });
+      }
+      const f = lm ? { t: t(), lm, wl, aspect: video.videoWidth / video.videoHeight, ...(up ? { up } : {}) } : null;
       root.dataset.fps = fps.toFixed(0);
 
       if (phase === 'position') {
@@ -324,7 +336,7 @@ export function runSession(o) {
         }
         if (m.ok) {
           readySince ??= now;
-          if (now - readySince > 1000) beginCountdown(ex.floor ? 5000 : 3000);
+          if (now - readySince > 1000) beginCountdown(slowStart ? 5000 : 3000);
         } else readySince = null;
         return;
       }
@@ -341,6 +353,7 @@ export function runSession(o) {
       root.classList.toggle('holding', st.kind === 'hold' && st.holding && phase === 'active');
       msgEl.textContent = st.msg || '';
       if (st.event) log(st.event, { t: Math.round(f.t), count: st.count, fps });
+      if (DEBUG && st.value != null) log('m', { t: Math.round(f.t), v: Math.round(st.value), ph: st.phase[0] }); // metric trace for e2e analysis
       if (st.event === 'rep') {
         beep(880, 80);
         buzz(20);

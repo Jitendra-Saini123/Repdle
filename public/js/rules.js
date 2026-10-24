@@ -32,6 +32,7 @@ export const EXERCISES = {
     max: [100, 110],
     minGapMs: [400, 380],
     floor: true,
+    gravity: true, // 'level'/'upright' checks need the real up (gravity.js)
   },
   jack: {
     key: 'jack',
@@ -70,6 +71,7 @@ export const EXERCISES = {
     tips: ['Squeeze glutes and belly.', 'Look at the floor, neck long.', 'Breathe — don’t hold your breath.'],
     max: [60, 60],
     floor: true,
+    gravity: true, // 'level'/'upright' checks need the real up (gravity.js)
   },
   wallsit: {
     key: 'wallsit',
@@ -82,6 +84,7 @@ export const EXERCISES = {
     tips: ['Knees over the ankles.', 'Press your whole back into the wall.', 'Hands off the thighs.'],
     max: [60, 60],
     floor: false,
+    gravity: true, // 'level'/'upright' checks need the real up (gravity.js)
   },
 };
 

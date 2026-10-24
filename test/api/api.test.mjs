@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { call, player, submit, scoreBody, cron, dayWith, exOf, repTimes, data } from './helpers.mjs';
 import { placeIn } from '../../public/js/stats.js';
+import { EXERCISES } from '../../public/js/rules.js';
 import { dateOfN, dayNumber } from '../../public/js/day.js';
 
 const SQ = dayWith('squat');
@@ -79,6 +80,36 @@ test('hold exercise counts held seconds from the 60-char timeline', async () => 
   assert.equal(r.body.score.seg, 'aaaa55'); // 10,10,10,10,5,5
   const bad = await call('POST', '/api/score', { ...scoreBody(await player(), PL, 3), held: '111' }, { n: PL });
   assert.equal(bad.status, 422);
+});
+
+test('every exercise and variant: the server accepts the max and rejects beyond it', async () => {
+  for (const ex of Object.keys(EXERCISES)) {
+    const e = EXERCISES[ex];
+    const n = dayWith(ex, SQ + 14); // away from the days the metrics tests count
+    for (const v of [0, 1]) {
+      if (e.kind === 'reps') {
+        const max = e.max[v];
+        const gap = Math.max(e.minGapMs[v], Math.floor(59000 / max));
+        const ok = await submit(await player(), n, max, { v, times: repTimes(max, { gap, startAt: 300 }) }, { n });
+        assert.equal(ok.status, 200, `${ex} v${v} at max ${max}: ${ok.text}`);
+        const over = await submit(await player(), n, max + 1, { v, times: repTimes(max + 1, { gap: Math.floor(59000 / (max + 1)), startAt: 300 }) }, { n });
+        assert.equal(over.status, 422, `${ex} v${v} above max`);
+        const fast = await submit(await player(), n, 10, { v, times: repTimes(10, { gap: Math.floor(e.minGapMs[v] * 0.5) }) }, { n });
+        assert.equal(fast.body.reason, 'too_fast', `${ex} v${v} reps closer than the minimum gap`);
+        const tap = await submit(await player(), n, 12, { v, mode: 'tap', fps: 0 }, { n });
+        assert.equal(tap.status, 200, `${ex} v${v} tap mode`);
+        assert.equal(tap.body.score.cam, 0);
+      } else {
+        const full = await submit(await player(), n, 60, { v }, { n });
+        assert.equal(full.status, 200, `${ex} v${v} full minute`);
+        assert.equal(full.body.score.seg, 'aaaaaa');
+        const tap = await submit(await player(), n, 33, { v, mode: 'tap', fps: 0 }, { n });
+        assert.equal(tap.status, 200, `${ex} v${v} tap hold`);
+        const bad = await call('POST', '/api/score', { ...scoreBody(await player(), n, 60, { v }), reps: 61, held: '1'.repeat(61) }, { n });
+        assert.equal(bad.status, 422, `${ex} v${v} 61 s`);
+      }
+    }
+  }
 });
 
 test('duel: friend opens link, plays with ref, owner sees the accept', async () => {

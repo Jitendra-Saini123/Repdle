@@ -38,10 +38,17 @@ function angle2d(f, a, b, c) {
   return angleBetween(vec(f.lm[b], f.lm[a], asp, false), vec(f.lm[b], f.lm[c], asp, false));
 }
 // 0° = the line a→b is horizontal in the picture, 90° = vertical.
+// 0° = the line a→b is level (perpendicular to gravity), 90° = vertical.
+// `f.up` is the real "up" direction in the picture (unit vector, x scaled by
+// the aspect ratio) from the phone's motion sensor. A phone lying on its side
+// with rotation lock on turns the picture by 90°, so the picture's own edges
+// can't be trusted. Without a sensor (laptops) the picture's up is used.
 export function tilt(f, a, b) {
-  const dx = Math.abs((f.lm[b].x - f.lm[a].x) * (f.aspect || 1));
-  const dy = Math.abs(f.lm[b].y - f.lm[a].y);
-  return Math.atan2(dy, dx) * DEG;
+  const dx = (f.lm[b].x - f.lm[a].x) * (f.aspect || 1);
+  const dy = f.lm[b].y - f.lm[a].y;
+  const len = Math.hypot(dx, dy) || 1;
+  const [ux, uy] = f.up || [0, -1];
+  return Math.asin(Math.min(1, Math.abs(dx * ux + dy * uy) / len)) * DEG;
 }
 function dist(f, a, b, world = true) {
   if (world && f.wl) return Math.hypot(...vec(f.wl[a], f.wl[b]));
@@ -87,13 +94,23 @@ function bodyMsg(f) {
   const seen = (i) => visible(f, [i], 0.5);
   const upper = [L.ls, L.rs, L.lh, L.rh].some(seen);
   const feet = [L.la, L.ra].some(seen) && [L.lk, L.rk].some(seen);
-  return upper && !feet ? NEED_FEET : NEED_BODY;
+  if (upper && !feet) return NEED_FEET;
+  if (feet && ![L.ls, L.rs].some(seen)) return 'Step back — I need to see your shoulders too';
+  if (feet && !seen(L.nose)) return 'Step back — head to feet in the picture';
+  return NEED_BODY;
 }
+// Standing exercises also need the head: with the head out of the picture
+// MediaPipe can return a scrambled skeleton (hips above shoulders) with high
+// visibility scores — seen on a real close-up clip, 24 Oct 2026.
+const headIn = (f) => visible(f, [L.nose], 0.5);
 
 const MEASURE = {
+  // Squats and lunges need the shoulders in the picture too: with only the
+  // legs visible (camera too low, player too close) the leg estimates get
+  // unreliable and produce phantom reps (seen on a real clip, 24 Oct 2026).
   squat(f, v) {
-    const sides = pickSides(f, ['h', 'k', 'a']);
-    if (!sides.length) return { ok: false, msg: bodyMsg(f) };
+    const sides = pickSides(f, ['s', 'h', 'k', 'a']);
+    if (!sides.length || !headIn(f)) return { ok: false, msg: bodyMsg(f) };
     return { ok: true, metric: meanOver(sides, (s) => jointAngle(f, s.h, s.k, s.a)), form: null };
   },
   pushup(f, v) {
@@ -102,22 +119,28 @@ const MEASURE = {
     if (!sides.length) return { ok: false, msg: bodyMsg(f) };
     const side = SIDES[sides[0]];
     if (tilt(f, side.s, side.h) > 40) return { ok: false, msg: 'Get into push-up position, side-on to the camera' };
+    const elbow = meanOver(sides, (s) => jointAngle(f, s.s, s.e, s.w));
+    // With straight arms the hands are under the shoulders: upper arm roughly at
+    // right angles to the torso. Standing arm curls (arms hanging along the
+    // body) fail this even when a sideways phone has no motion sensor.
+    if (elbow >= 140 && meanOver(sides, (s) => jointAngle(f, s.h, s.s, s.e)) < 45) return { ok: false, msg: 'Get into push-up position, side-on to the camera' };
     const line = meanOver(sides, (s) => jointAngle(f, s.s, s.h, s[end]));
-    return {
-      ok: true,
-      metric: meanOver(sides, (s) => jointAngle(f, s.s, s.e, s.w)),
-      form: line >= 145 ? null : 'Keep your body straight',
-    };
+    return { ok: true, metric: elbow, form: line >= 145 ? null : 'Keep your body straight' };
   },
   jack(f, v) {
-    if (!visible(f, [L.ls, L.rs, L.lw, L.rw, L.lh, L.rh, L.la, L.ra], 0.5)) return { ok: false, msg: 'Face the camera — hands and feet in frame' };
+    if (!visible(f, [L.ls, L.rs, L.lw, L.rw, L.lh, L.rh, L.la, L.ra], 0.5) || !headIn(f)) return { ok: false, msg: 'Face the camera — head, hands and feet in frame' };
     const raise = (angle2d(f, L.lh, L.ls, L.lw) + angle2d(f, L.rh, L.rs, L.rw)) / 2; // 0 arms down … 180 overhead
     const leg = (dist(f, L.lh, L.la, false) + dist(f, L.rh, L.ra, false)) / 2;
     const spread = dist(f, L.la, L.ra, false) / (leg || 1);
-    return { ok: true, metric: 180 - raise, form: spread >= (v === 1 ? 0.35 : 0.45) ? null : 'Feet wider ↔' };
+    // Hands really overhead: further from the feet than the shoulders are.
+    // When folded forward (toe touch, the way down into a burpee) hanging
+    // arms look "raised" relative to the torso, but the hands are near the feet.
+    const reach = dist(f, L.lw, L.la) + dist(f, L.rw, L.ra) > dist(f, L.ls, L.la) + dist(f, L.rs, L.ra);
+    const form = !reach ? 'Stand tall — hands overhead' : spread >= (v === 1 ? 0.35 : 0.45) ? null : 'Feet wider ↔';
+    return { ok: true, metric: 180 - raise, form };
   },
   lunge(f, v) {
-    if (!visible(f, [L.lh, L.rh, L.lk, L.rk, L.la, L.ra], 0.4)) return { ok: false, msg: bodyMsg(f) };
+    if (!visible(f, [L.lh, L.rh, L.lk, L.rk, L.la, L.ra], 0.4) || !(visible(f, [L.ls], 0.5) || visible(f, [L.rs], 0.5)) || !headIn(f)) return { ok: false, msg: bodyMsg(f) };
     const knees = (jointAngle(f, L.lh, L.lk, L.la) + jointAngle(f, L.rh, L.rk, L.ra)) / 2;
     const leg = (dist(f, L.lh, L.lk) + dist(f, L.lk, L.la) + dist(f, L.rh, L.rk) + dist(f, L.rk, L.ra)) / 2;
     const stance = dist(f, L.la, L.ra) / (leg || 1);
@@ -125,16 +148,26 @@ const MEASURE = {
   },
   plank(f, v) {
     const end = v === 1 ? 'k' : 'a';
-    const sides = pickSides(f, ['s', 'h', end]);
+    const sides = pickSides(f, ['s', 'e', 'h', end]);
     if (!sides.length) return { ok: false, msg: bodyMsg(f) };
     const s = SIDES[sides[0]];
     if (tilt(f, s.s, s[end]) > 35) return { ok: true, valid: false, msg: 'Get down into a plank, side-on to the camera' };
+    // Arms support the body: upper arm roughly at right angles to the torso
+    // (elbows or hands under the shoulders). Standing with the arms down, or
+    // lying flat on the floor, fails this whatever way the phone is held.
+    const arm = meanOver(sides, (x) => jointAngle(f, x.h, x.s, x.e));
+    if (arm < 45 || arm > 135) return { ok: true, valid: false, msg: 'Elbows or hands under your shoulders' };
     const line = meanOver(sides, (x) => jointAngle(f, x.s, x.h, x[end]));
     if (line >= (v === 1 ? 150 : 155)) return { ok: true, valid: true };
-    // Hip above or below the shoulder→heel line (image y points down)?
-    const S = f.lm[s.s], E = f.lm[s[end]], H = f.lm[s.h];
-    const yLine = Math.abs(E.x - S.x) > 1e-6 ? S.y + ((E.y - S.y) * (H.x - S.x)) / (E.x - S.x) : H.y;
-    return { ok: true, valid: false, msg: H.y < yLine ? 'Lower your hips' : 'Lift your hips' };
+    // Hip above (pike) or below (sag) the shoulder→heel line. "Down" is the
+    // side the elbows are on (they rest toward the floor), so this works for
+    // any phone orientation without trusting the sensor's sign.
+    const asp = f.aspect || 1;
+    const S = f.lm[s.s], E = f.lm[s[end]], H = f.lm[s.h], El = f.lm[s.e];
+    let nx = -(E.y - S.y), ny = (E.x - S.x) * asp; // normal of the body line
+    if ((El.x - S.x) * asp * nx + (El.y - S.y) * ny > 0) { nx = -nx; ny = -ny; } // point away from the floor
+    const offset = (H.x - S.x) * asp * nx + (H.y - S.y) * ny;
+    return { ok: true, valid: false, msg: offset > 0 ? 'Lower your hips' : 'Lift your hips' };
   },
   wallsit(f, v) {
     const sides = pickSides(f, ['s', 'h', 'k', 'a']);
@@ -229,7 +262,7 @@ function repAnalyzer(exKey, v) {
 
   function snapshot(t, seen, event) {
     const progress = st.value == null ? 0 : Math.max(0, Math.min(1.15, (cfg.top - st.value) / (cfg.top - cfg.bottom)));
-    return { kind: 'reps', count: st.count, partial: st.partial, seen, event, progress, armed: st.phase !== 'unarmed', msg: t < st.msgUntil ? st.msg : null };
+    return { kind: 'reps', count: st.count, partial: st.partial, seen, event, progress, value: st.value, phase: st.phase, armed: st.phase !== 'unarmed', msg: t < st.msgUntil ? st.msg : null };
   }
 
   return {

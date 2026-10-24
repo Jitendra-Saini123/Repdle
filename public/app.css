@@ -261,7 +261,7 @@ form > * + * { margin-top: 10px; }
 
 .session[data-phase='countdown'] .s-count, .session[data-phase='active'] .s-count, .session[data-phase='done'] .s-count { display: block; }
 .session[data-phase='active'] .s-timer, .session[data-phase='active'] .s-clock { display: block; }
-.session:not(.tap-mode)[data-phase='active'] .s-depth, .session:not(.tap-mode)[data-phase='countdown'] .s-depth { display: block; }
+.session:not(.tap-mode):not(.hold)[data-phase='active'] .s-depth, .session:not(.tap-mode):not(.hold)[data-phase='countdown'] .s-depth { display: block; } /* depth meter: rep exercises only */
 .session:not([data-phase='active']):not([data-phase='countdown']) .s-big { display: none; }
 .session[data-phase='countdown'] .s-big .tap-btn { opacity: 0.4; }
 .tap-mode .s-count { left: 50%; transform: translateX(-50%); text-align: center; top: calc(max(14px, env(safe-area-inset-top)) + 100px); bottom: auto; }

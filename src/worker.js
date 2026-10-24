@@ -159,15 +159,19 @@ async function submitScore(req, env, ctx, now) {
     score = { reps: row.reps, seg: row.seg, v: row.v, cam: row.cam, cc: row.cc };
     scoreAt = now - msIntoDay(now) + row.ts * 1000;
   }
+  // The score is saved at this point. Extras that fail (e.g. the free D1
+  // read quota running out) must not turn a saved score into an error the
+  // app would keep retrying.
+  const soft = (p, what) => p.catch((e) => { console.error(`score extras: ${what}`, e?.message || e); return null; });
   const [snap, leagues, duel] = await Promise.all([
-    getSnapshot(env, n, now, ctx),
-    leagueBoards(env, n, pid, b.leagues),
-    ref ? duelScore(env, n, ref) : null,
+    soft(getSnapshot(env, n, now, ctx), 'snapshot'),
+    soft(leagueBoards(env, n, pid, b.leagues), 'leagues'),
+    ref ? soft(duelScore(env, n, ref), 'duel') : null,
   ]);
   // `included`: whether this score is already inside the histogram (the app
   // adds the player on top of an older snapshot itself).
-  const statsOut = { ...trimSnapshot(snap, score.v, score.cc), included: Boolean(score.cam) && snap.at >= scoreAt };
-  return json({ ok: true, dup, pid, n, score, stats: statsOut, leagues, duel });
+  const statsOut = snap ? { ...trimSnapshot(snap, score.v, score.cc), included: Boolean(score.cam) && snap.at >= scoreAt } : null;
+  return json({ ok: true, dup, pid, n, score, stats: statsOut, leagues: leagues || [], duel });
 }
 
 async function markShared(req, env, now) {

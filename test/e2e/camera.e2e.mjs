@@ -116,12 +116,20 @@ try {
   await b.waitForSelector('[data-act-tap]');
   await b.click('[data-act-tap]');
   await b.waitForFunction(() => document.querySelector('.session')?.dataset.phase === 'active', { timeout: 10000, polling: 250 });
-  const target = result.score + 3;
-  for (let i = 0; i < target; i++) {
-    await b.tap('.tap-btn');
-    await new Promise((r) => setTimeout(r, 650));
+  // Beat the challenger: reps → tap once per rep; holds (plank, wall sit) →
+  // the clock runs from GO, tap once when "stopping".
+  const hold = await b.$('.session.hold');
+  if (hold) {
+    await new Promise((r) => setTimeout(r, Math.min(result.score + 2, 59) * 1000));
+    await shot(b, '07-tap');
+    if (result.score < 57) await b.tap('.tap-btn'); // else the minute ends on its own (60 s)
+  } else {
+    for (let i = 0; i < result.score + 3; i++) {
+      await b.tap('.tap-btn');
+      await new Promise((r) => setTimeout(r, 650));
+    }
+    await shot(b, '07-tap');
   }
-  await shot(b, '07-tap');
   await b.waitForSelector('.vs', { timeout: 70000 });
   await b.waitForFunction(() => !document.querySelector('.chips')?.textContent.includes('ranking you'), { timeout: 15000, polling: 250 });
   await shot(b, '08-duel-result');

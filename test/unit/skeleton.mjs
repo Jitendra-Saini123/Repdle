@@ -15,17 +15,34 @@ export function noise(amount) {
 }
 
 // joints: { ls:[x,y], ... } (both sides may share coordinates for side views)
-export function frame(t, joints, { vis = 0.95, jitter = 0, aspect = 1 } = {}) {
+// Phone lying on its side with rotation lock on: the picture is turned 90°
+// clockwise. World "up" then points to +x in the image.
+export function rotate90(joints) {
+  const out = {};
+  for (const [k, [x, y]] of Object.entries(joints)) out[k] = [1 - y, x];
+  return out;
+}
+export const UP_ROTATED = [1, 0];
+
+export function frame(t, joints, { vis = 0.95, jitter = 0, aspect = 1, up } = {}) {
   const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.2 }));
   const wl = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0, visibility: 0.2 }));
-  for (const [name, [x, y]] of Object.entries(joints)) {
+  const withHead = { ...joints };
+  if (!withHead.nose && joints.ls && joints.rs) {
+    // head: one shoulder-width-ish beyond the shoulders, away from the hips
+    const sx = (joints.ls[0] + joints.rs[0]) / 2, sy = (joints.ls[1] + joints.rs[1]) / 2;
+    const hx = joints.lh ? (joints.lh[0] + joints.rh[0]) / 2 : sx, hy = joints.lh ? (joints.lh[1] + joints.rh[1]) / 2 : sy + 0.1;
+    const dx = sx - hx, dy = sy - hy, n = Math.hypot(dx, dy) || 1;
+    withHead.nose = [sx + (dx / n) * 0.09, sy + (dy / n) * 0.09];
+  }
+  for (const [name, [x, y]] of Object.entries(withHead)) {
     const i = LM[name];
     const jx = x + noise(jitter), jy = y + noise(jitter);
     const side = name.startsWith('l') ? -1 : 1;
     lm[i] = { x: jx, y: jy, z: 0, visibility: vis };
-    wl[i] = { x: (jx - 0.5) * 1.8, y: (jy - 0.5) * 1.8, z: side * 0.08, visibility: vis };
+    wl[i] = { x: (jx - 0.5) * aspect * 1.8, y: (jy - 0.5) * 1.8, z: side * 0.08, visibility: vis }; // metres don't stretch with the picture
   }
-  return { t, lm, wl, aspect };
+  return up ? { t, lm, wl, aspect, up } : { t, lm, wl, aspect };
 }
 
 const both = (o) => {
@@ -142,3 +159,40 @@ export function run(analyzer, poseAt, { fps = 30, from = -2000, to = 60000, opts
 
 // Smooth repetition between `top` and `bottom` with the given period (ms).
 export const cycle = (t, top, bottom, period) => (t < 0 ? top : top - ((top - bottom) * (1 - Math.cos((2 * Math.PI * t) / period))) / 2);
+
+// Picture transforms for the test matrix (joints in square picture space).
+export const TRANSFORMS = {
+  upright: { map: (x, y) => [x, y], up: null },
+  'rot90 + sensor': { map: (x, y) => [1 - y, x], up: [1, 0] },
+  'rot270 + sensor': { map: (x, y) => [y, 1 - x], up: [-1, 0] },
+  'rot180 + sensor': { map: (x, y) => [1 - x, 1 - y], up: [0, 1] },
+  'rot90, no sensor': { map: (x, y) => [1 - y, x], up: null },
+  mirrored: { map: (x, y) => [1 - x, y], up: null },
+  'far (half size)': { map: (x, y) => [0.5 + (x - 0.5) * 0.5, 0.5 + (y - 0.5) * 0.5], up: null },
+  'close (1.1×)': { map: (x, y) => [0.5 + (x - 0.5) * 1.1, 0.5 + (y - 0.5) * 1.1], up: null },
+  // portrait: the player stands further back so the whole body still fits the narrow picture
+  'portrait camera 9:16': { map: (x, y) => [0.5 + ((x - 0.5) * 0.55) / 0.5625, 0.5 + (y - 0.5) * 0.55], up: null, aspect: 0.5625 },
+  'landscape camera 16:9': { map: (x, y) => [0.5 + (x - 0.5) / 1.7778, y], up: null, aspect: 1.7778 },
+};
+export function transform(joints, name) {
+  const { map } = TRANSFORMS[name];
+  const out = {};
+  for (const [k, [x, y]] of Object.entries(joints)) out[k] = map(x, y);
+  return out;
+}
+
+// Front view of a forward bend (toe touch / the way down into a burpee):
+// p = 0 standing tall with arms down, 1 = folded, arms hanging to the feet.
+export function bendPose(p) {
+  const H = { l: [0.46, 0.52], r: [0.54, 0.52] };
+  const sy = 0.3 + 0.32 * p; // shoulders drop past the hips toward the camera
+  const S = { l: [0.43, sy], r: [0.57, sy] };
+  const wy = 0.55 + 0.33 * p; // hands hang toward the feet
+  return {
+    ls: S.l, rs: S.r, lh: H.l, rh: H.r,
+    le: [0.42, (sy + wy) / 2], re: [0.58, (sy + wy) / 2],
+    lw: [0.42, wy], rw: [0.58, wy],
+    lk: [0.4, 0.71], rk: [0.6, 0.71],
+    la: [0.38, 0.9], ra: [0.62, 0.9],
+  };
+}

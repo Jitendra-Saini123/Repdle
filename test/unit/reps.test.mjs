@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAnalyzer, createTapCounter, jointAngle, LM } from '../../public/js/reps.js';
-import { frame, run, cycle, squatPose, pushupPose, curlPose, jackPose, lungePose, plankPose, wallsitPose } from './skeleton.mjs';
+import { frame, run, cycle, squatPose, pushupPose, curlPose, jackPose, lungePose, plankPose, wallsitPose, rotate90, UP_ROTATED, bendPose } from './skeleton.mjs';
 
 test('skeleton helper produces the knee angle it was asked for', () => {
   for (const k of [170, 120, 90]) {
@@ -186,4 +186,81 @@ test('tap mode: taps faster than the min gap are ignored; holds count while pres
   const r = hold.result(40000);
   assert.equal(r.score, 30);
   assert.equal(r.held, '1'.repeat(20) + '0'.repeat(10) + '1'.repeat(10) + '0'.repeat(20));
+});
+
+// ---------- phone on its side (rotation lock on): the picture is turned 90° ----------
+// Reported 24 Oct 2026: standing in front of the phone counted plank seconds,
+// a real plank counted nothing. "Horizontal" must follow gravity (phone sensor),
+// not the picture's edges.
+test('plank, phone on its side: real plank counts, standing does not (gravity from the sensor)', () => {
+  const opts = { up: UP_ROTATED };
+  assert.equal(run(createAnalyzer('plank', 0), () => rotate90(plankPose(0)), { opts }).result.score, 60);
+  assert.equal(run(createAnalyzer('plank', 0), () => rotate90(plankPose(0, { standing: true })), { opts }).result.score, 0);
+});
+
+test('plank: standing with arms down never counts, even when the phone orientation is unknown', () => {
+  // no sensor (laptop, or motion permission denied) and the picture is rotated
+  assert.equal(run(createAnalyzer('plank', 0), () => rotate90(plankPose(0, { standing: true }))).result.score, 0);
+  // lying flat on the floor with the arms along the body is not a plank either
+  const lying = plankPose(0);
+  lying.le = lying.re = [0.38, 0.64];
+  lying.lw = lying.rw = [0.5, 0.66];
+  const r = run(createAnalyzer('plank', 0), () => lying);
+  assert.equal(r.result.score, 0);
+  assert.ok(r.msgs.some((m) => /under your shoulders/.test(m)));
+});
+
+test('push-ups and wall sit also follow gravity on a sideways phone', () => {
+  const opts = { up: UP_ROTATED };
+  assert.equal(run(createAnalyzer('pushup', 0), (t) => rotate90(pushupPose(cycle(t, 170, 80, 2000))), { opts }).result.score, 30);
+  assert.equal(run(createAnalyzer('pushup', 0), (t) => rotate90(curlPose(cycle(t, 170, 40, 1500))), { opts }).result.score, 0);
+  assert.equal(run(createAnalyzer('wallsit', 0), () => rotate90(wallsitPose(90)), { opts }).result.score, 60);
+  assert.equal(run(createAnalyzer('wallsit', 0), () => rotate90(wallsitPose(170)), { opts }).result.score, 0);
+});
+
+test('plank hips hint is right whichever way the phone lies', () => {
+  for (const [name, pose, opts] of [
+    ['upright', (h) => plankPose(h), {}],
+    ['sideways + sensor', (h) => rotate90(plankPose(h)), { up: UP_ROTATED }],
+    ['sideways, sensor sign flipped', (h) => rotate90(plankPose(h)), { up: [-1, 0] }],
+  ]) {
+    assert.ok(run(createAnalyzer('plank', 0), () => pose(0.1), { opts }).msgs.includes('Lift your hips'), `${name}: sag`);
+    assert.ok(run(createAnalyzer('plank', 0), () => pose(-0.1), { opts }).msgs.includes('Lower your hips'), `${name}: pike`);
+  }
+});
+
+// Found 24 Oct 2026 on a real clip: getting up from a toe touch / burpee was
+// counted as a jumping jack (hanging arms look "overhead" relative to a folded
+// torso). A real jack has the hands further from the feet than the shoulders.
+test('jumping jacks: forward bends and burpee get-ups never count', () => {
+  const r = run(createAnalyzer('jack', 0), (t) => bendPose(t < 0 ? 0 : (1 - Math.cos((2 * Math.PI * t) / 3000)) / 2));
+  assert.equal(r.result.score, 0);
+  // and real jacks still count
+  assert.equal(run(createAnalyzer('jack', 0), (t) => {
+    const p = t < 0 ? 0 : (1 - Math.cos((2 * Math.PI * t) / 1000)) / 2;
+    return jackPose(15 + 155 * p, 0.02 + 0.16 * p);
+  }).result.score, 60);
+});
+
+test('squats and lunges: legs-only close-ups never count (shoulders must be in the picture)', () => {
+  const legsOnly = (pose) => (t) => {
+    const p = pose(t);
+    for (const j of ['ls', 'rs', 'le', 're', 'lw', 'rw']) p[j] = [p[j][0], -0.3]; // above the top edge
+    return p;
+  };
+  const sq = run(createAnalyzer('squat', 0), legsOnly((t) => squatPose(cycle(t, 172, 85, 3000))));
+  assert.equal(sq.result.score, 0);
+  assert.ok(sq.msgs.some((m) => /shoulders/.test(m)));
+  assert.equal(run(createAnalyzer('lunge', 0), legsOnly((t) => lungePose(cycle(t, 170, 92, 2500)))).result.score, 0);
+});
+
+test('standing exercises: head out of the picture never counts (scrambled skeletons)', () => {
+  const noHead = (pose) => (t) => ({ ...pose(t), nose: [0.5, -0.2] });
+  assert.equal(run(createAnalyzer('squat', 0), noHead((t) => squatPose(cycle(t, 172, 85, 3000)))).result.score, 0);
+  assert.equal(run(createAnalyzer('lunge', 0), noHead((t) => lungePose(cycle(t, 170, 92, 2500)))).result.score, 0);
+  const jackNoHead = run(createAnalyzer('jack', 0), noHead((t) => {
+    const p = t < 0 ? 0 : (1 - Math.cos((2 * Math.PI * t) / 1000)) / 2;
+    return jackPose(15 + 155 * p, 0.02 + 0.16 * p);
+  }));
+  assert.equal(jackNoHead.result.score, 0);
 });

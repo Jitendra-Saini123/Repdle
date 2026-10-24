@@ -8,6 +8,7 @@ import { store } from './store.js';
 import { api, isRetryable } from './api.js';
 import { esc, $, $$, toast, sheet, confirmSheet, shareOrCopy, copyText, fmtClock, countryName } from './ui.js';
 import { runSession } from './session.js';
+import { requestMotionPermission } from './gravity.js';
 
 const app = $('#app');
 const S = { data: null, offset: 0, today: 0, ch: null, timers: [] };
@@ -187,8 +188,15 @@ function safetyGate() {
 }
 
 // ---------------- play ----------------
+// Plank, push-ups and wall sit need the phone's motion sensor (gravity.js).
+// iOS only allows asking straight from a tap, before any await.
+function askMotion(ex, mode = 'cam') {
+  if (mode === 'cam' && EXERCISES[ex]?.gravity) requestMotionPermission();
+}
+
 async function playDaily({ mode, ref = null, duel = null }) {
   if (store.result(S.today)) return home();
+  askMotion(S.ch.ex, mode);
   if (!(await safetyGate())) return;
   const ch = S.ch;
   const v = store.get(`v.${ch.ex}`, 0);
@@ -400,7 +408,7 @@ function homeDone(entry) {
   $('[data-share]', app).onclick = () => doShare(entry, false);
   $('[data-copy]', app).onclick = () => doShare(entry, true);
   $('[data-rename]', app).onclick = openMenu;
-  $('[data-practice]', app).onclick = practice;
+  $('[data-practice]', app).onclick = () => practice();
   startNextTimer();
 }
 
@@ -427,11 +435,12 @@ async function markShared(entry) {
   } catch {}
 }
 
-async function practice() {
+async function practice(exKey, variant) {
+  const ex = EXERCISES[exKey] ? exKey : S.ch.ex;
+  askMotion(ex);
   if (!(await safetyGate())) return;
-  const ch = S.ch;
-  const v = store.get(`v.${ch.ex}`, 0);
-  const r = await runSession({ n: S.today, ex: ch.ex, v, mode: 'cam', label: 'Practice' });
+  const v = variant === 0 || variant === 1 ? variant : store.get(`v.${ex}`, 0);
+  const r = await runSession({ n: S.today, ex, v, mode: 'cam', label: 'Practice' });
   render();
   if (r) sheet(`<h2>Practice: ${r.score}${r.kind === 'hold' ? 's' : ''}</h2>${gridHtml(r.kind, r.seg, true)}<p class="muted">Practice runs are never sent or ranked. Your official score today stays ${store.result(S.today)?.score ?? '—'}.</p>`);
 }
@@ -503,6 +512,7 @@ async function duelPage(id) {
     <a class="btn ghost" href="/" data-link>Play today’s Repdle #${S.today}</a>
     ${accepts}`);
   $('[data-replay]', app).onclick = async () => {
+    askMotion(d.ex);
     if (!(await safetyGate())) return;
     const r = await runSession({ n: d.n, ex: d.ex, v: d.v, mode: 'cam', label: `Duel replay · #${d.n}` });
     if (!r) return render();
@@ -738,4 +748,4 @@ function openMenu() {
 boot();
 
 // for debugging in the console
-window.repdle = { S, store };
+window.repdle = { S, store, practice, runSession }; // debugging + e2e hooks
