@@ -1,0 +1,25 @@
+{
+  "name": "repdle",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Repdle: the daily 60-second fitness challenge. Camera AI counts reps on-device.",
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/vendor.mjs",
+    "gen:challenges": "node scripts/gen-challenges.mjs",
+    "db:local": "wrangler d1 migrations apply repdle --local",
+    "dev": "wrangler dev --test-scheduled",
+    "seed": "node scripts/seed.mjs",
+    "test": "node --test test/unit/*.test.mjs",
+    "test:api": "node scripts/test-api.mjs",
+    "metrics": "wrangler d1 execute repdle --remote --file scripts/metrics.sql",
+    "metrics:local": "wrangler d1 execute repdle --local --file scripts/metrics.sql",
+    "deploy": "wrangler deploy",
+    "test:e2e": "node test/e2e/camera.e2e.mjs"
+  },
+  "devDependencies": {
+    "@mediapipe/tasks-vision": "1.1.0",
+    "puppeteer-core": "^24.10.0",
+    "wrangler": "4.151.0"
+  }
+}

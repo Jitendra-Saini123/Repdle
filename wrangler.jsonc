@@ -1,0 +1,32 @@
+// Repdle: one Worker serves the static site (free, unlimited static requests)
+// and the /api (counted against the free 100K requests/day).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "repdle",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // /d/<id>, /l/<code>, /leagues … all load index.html without running the Worker
+    "not_found_handling": "single-page-application",
+    // only the API invokes the Worker; everything else is a free static asset
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "repdle",
+      // from `npx wrangler d1 create repdle` — use your own id if you deploy a copy
+      "database_id": "7df8307e-fcda-448e-adf5-abe0a1dd7501",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // hourly histogram snapshot; the 00:05 UTC run also writes daily metrics
+  "triggers": { "crons": ["5 * * * *"] },
+  "observability": { "enabled": true },
+  "vars": {
+    // set to "https://your-site.pages.dev" if the static site lives on Pages
+    "ALLOWED_ORIGINS": ""
+  }
+}
