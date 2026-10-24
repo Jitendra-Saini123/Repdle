@@ -101,8 +101,7 @@ repdle/
 ├─ migrations/0001_init.sql   D1 schema
 ├─ scripts/                   gen-challenges, vendor, seed, metrics.sql, make-images.py
 ├─ test/unit  test/api  test/e2e
-├─ wrangler.jsonc
-└─ launch.md                  Hindi YouTube outline, Reels/Shorts shot list, X/Reddit posts
+└─ wrangler.jsonc
 ```
 
 No framework and no build step: the browser loads ES modules directly, and the Worker imports the same `rules.js`, `grid.js`, `day.js` and `id.js`. That way the client and the server can never disagree on limits, day numbers or the pace grid.

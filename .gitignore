@@ -6,3 +6,6 @@ public/models/
 test/e2e/shots/
 .DS_Store
 *.log
+
+# private launch kit (YouTube outline, X/Reddit drafts) — kept local only
+launch.md
