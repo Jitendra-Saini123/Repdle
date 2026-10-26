@@ -1,8 +1,8 @@
 // Offline + fast repeat visits. The pose AI files are cached forever (their
 // folder name carries the version); the app shell is network-first; the API is
 // never cached here.
-const CACHE = 'repdle-v3';
-const SHELL = ['/', '/app.css', '/config.js', '/challenges.json', '/js/app.js', '/js/api.js', '/js/day.js', '/js/gravity.js', '/js/grid.js', '/js/id.js', '/js/pose.js', '/js/reps.js', '/js/rules.js', '/js/session.js', '/js/stats.js', '/js/store.js', '/js/ui.js'];
+const CACHE = 'repdle-v4';
+const SHELL = ['/', '/app.css', '/config.js', '/challenges.json', '/js/app.js', '/js/api.js', '/js/day.js', '/js/gravity.js', '/js/grid.js', '/js/guide.js', '/js/id.js', '/js/pose.js', '/js/reps.js', '/js/rules.js', '/js/session.js', '/js/stats.js', '/js/store.js', '/js/ui.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

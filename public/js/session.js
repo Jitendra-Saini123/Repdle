@@ -7,6 +7,7 @@ import { segmentsFromTimes, segmentsFromHeld } from './grid.js';
 import { startGravity, pictureUp, hasMotionReadings } from './gravity.js';
 import { esc, beep, buzz, speak, unlockAudio, toast, confirmSheet, copyText, $ } from './ui.js';
 import { store } from './store.js';
+import { openExerciseGuide } from './guide.js';
 
 // Why a player ended up in tap mode (sent with the score, for the metrics).
 export const FB = { none: 0, denied: 1, noCamera: 2, slow: 3, model: 4, manual: 5 };
@@ -228,6 +229,7 @@ export function runSession(o) {
           <button class="btn primary" data-act="start">Start now (${slowStart ? 8 : 5}s to get ready)</button>
         </div>
         <div class="row">
+          <button class="btn ghost small" data-act="guide">👀 Form & Demo</button>
           <button class="btn ghost small" data-act="flip">↺ Switch camera</button>
           <button class="btn ghost small" data-act="tap">✋ Tap mode</button>
         </div>`);
@@ -237,6 +239,7 @@ export function runSession(o) {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (!act) return;
       if (act === 'start') beginCountdown(slowStart ? 8000 : 5000);
+      if (act === 'guide') openExerciseGuide(o.ex, o.v);
       if (act === 'flip') flip();
       if (act === 'tap') switchToTap(fb || FB.manual);
       if (act === 'retry') { showPanel(''); startCamera(); }

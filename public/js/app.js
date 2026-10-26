@@ -9,6 +9,7 @@ import { api, isRetryable } from './api.js';
 import { esc, $, $$, toast, sheet, confirmSheet, shareOrCopy, copyText, fmtClock, countryName } from './ui.js';
 import { runSession } from './session.js';
 import { requestMotionPermission } from './gravity.js';
+import { openExerciseGuide } from './guide.js';
 
 const app = $('#app');
 const S = { data: null, offset: 0, today: 0, ch: null, timers: [] };
@@ -135,6 +136,11 @@ function home() {
         ${[0, 1].map((i) => `<button role="radio" aria-checked="${v === i}" data-v="${i}">${i ? '🌱 Low-impact' : '💪 Standard'}<small>${esc(ex.variants[i])}</small></button>`).join('')}
       </div>
       <p class="note">${esc(ex.variantNotes[v])} ${v ? '<span class="tag">ranked separately</span>' : ''}</p>
+      <button class="btn-guide" data-open-guide aria-label="Open exercise form guide">
+        <span class="guide-icon">👀</span>
+        <span class="guide-text"><b>How to do ${esc(exerciseName(ch.ex, v))}</b> — 5s Form & Camera Guide</span>
+        <span class="guide-arrow">→</span>
+      </button>
     </section>
     <button class="btn primary xl" data-play="cam">▶ Start — camera counts my reps</button>
     <button class="btn ghost" data-play="tap">✋ No camera? Tap mode <span class="tag">unranked</span></button>
@@ -150,6 +156,7 @@ function home() {
     <p class="center muted">🌍 One challenge, the same for everyone on Earth today.<br>Next Repdle in ${nextIn()}</p>
     ${quickNav()}`);
   $$('.seg-toggle button', app).forEach((b) => (b.onclick = () => { store.set(`v.${ch.ex}`, Number(b.dataset.v)); home(); }));
+  $('[data-open-guide]', app)?.addEventListener('click', () => openExerciseGuide(ch.ex, store.get(`v.${ch.ex}`, 0)));
   $$('[data-play]', app).forEach((b) => (b.onclick = () => playDaily({ mode: b.dataset.play })));
   startNextTimer();
 }
@@ -693,11 +700,19 @@ function aboutPage() {
       <p><b>Hosting.</b> Cloudflare (Workers, D1). Cloudflare processes requests as our hosting provider. No other third party receives any data.</p>
       <p class="muted small">Contact: <a href="mailto:jitendra.saini1189@gmail.com">jitendra.saini1189@gmail.com</a></p>
     </section>
+    <section class="card">
+      <h3>🏃 Exercise Form & Camera Guides</h3>
+      <p class="muted small">Tap any exercise to view the animated motion demo, AI depth target, and camera setup:</p>
+      <div class="row" style="justify-content: flex-start; gap: 8px; margin-top: 8px;">
+        ${Object.keys(EXERCISES).map((k) => `<button class="btn ghost small" data-guide-ex="${k}">${EXERCISES[k].emoji} ${esc(EXERCISES[k].name)}</button>`).join('')}
+      </div>
+    </section>
     <section class="card soft">
       <h3>Fair play</h3>
       <p>Camera scores are checked on the server (max reps per exercise, timing between reps, pace grid). Tap-mode scores keep your streak but are never ranked.</p>
       <p class="muted small">Pose AI: MediaPipe Pose Landmarker (Apache 2.0) by Google.</p>
     </section>`);
+  $$('[data-guide-ex]', app).forEach((b) => (b.onclick = () => openExerciseGuide(b.dataset.guideEx, 0)));
 }
 
 // ---------------- menu ----------------
